@@ -50,12 +50,20 @@ def crear_overlay(ancho, alto, titulo, config, pagina_actual, total_paginas):
         f'{config.get("footer", "")} | {config.get("version", "")}'
     )
 
-    if config.get("numerar_paginas"):
-        c.drawRightString(
-            ancho - margen_x,
-            footer_y,
-            f"Página {pagina_actual} de {total_paginas}"
-        )
+    if config.get("numerar_paginas", True):
+        formato = config.get("formato_numeracion", "Página {pagina}")
+
+        if formato != "Sin numeración":
+            texto_pagina = formato.format(
+                pagina=pagina_actual,
+                total=total_paginas
+            )
+
+            c.drawRightString(
+                ancho - margen_x,
+                footer_y,
+                texto_pagina
+            )
 
     c.line(margen_x, footer_y + 20, ancho - margen_x, footer_y + 20)
 

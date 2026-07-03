@@ -9,11 +9,13 @@ DEFAULT_CONFIG = {
     "entrada": "Entrada",
     "salida": "Salida",
     "logo": "assets/logo.png",
+    "header": "",
     "footer": "Confidencial - Uso interno",
     "version": "v1.0",
     "mostrar_logo": True,
     "mostrar_fecha": True,
     "numerar_paginas": True,
+    "formato_numeracion": "Página {pagina}",
     "agregar_portada": True,
     "header_offset": 35,
     "footer_offset": 25,
@@ -22,7 +24,11 @@ DEFAULT_CONFIG = {
     "logo_height": 30,
     "titulo_portada": "Documentación WalkMe",
     "subtitulo_portada": "Documento generado desde Notion",
-    "area_portada": "Uso interno"
+    "area_portada": "Uso interno",
+    "mostrar_header_portada": False,
+    "mostrar_footer_portada": False,
+    "header_portada": "",
+    "footer_portada": ""
 }
 
 

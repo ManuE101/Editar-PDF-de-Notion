@@ -1,4 +1,4 @@
-from io import BytesIO
+﻿from io import BytesIO
 from datetime import datetime
 import os
 
@@ -15,18 +15,34 @@ def crear_portada(titulo_documento, config):
     ancho, alto = A4
     margen_x = 70
 
-    logo = config.get("logo", "")
+    logos = [
+        config.get("logo_izquierdo", ""),
+        config.get("logo_central", ""),
+        config.get("logo_derecho", ""),
+    ]
+    if not any(logos):
+        logos = [config.get("logo", "")]
 
-    if config.get("mostrar_logo") and logo and os.path.exists(logo):
-        c.drawImage(
-            ImageReader(logo),
-            margen_x,
-            alto - 130,
-            width=150,
-            height=70,
-            preserveAspectRatio=True,
-            mask="auto"
-        )
+    logo_width = int(config.get("logo_width", 80))
+    logo_height = int(config.get("logo_height", 30))
+    posiciones_x = [
+        margen_x,
+        (ancho - logo_width) / 2,
+        ancho - margen_x - logo_width,
+    ]
+
+    if config.get("mostrar_logo"):
+        for logo, x in zip(logos, posiciones_x):
+            if logo and os.path.exists(logo):
+                c.drawImage(
+                    ImageReader(logo),
+                    x,
+                    alto - 130,
+                    width=logo_width,
+                    height=logo_height,
+                    preserveAspectRatio=True,
+                    mask="auto"
+                )
 
     c.setFont("Helvetica-Bold", 24)
     c.drawString(margen_x, alto - 230, config.get("titulo_portada", ""))

@@ -8,6 +8,7 @@ from reportlab.lib.units import cm
 from PIL import Image as PILImage
 
 from layout_engine import dividir_en_paginas
+from logo_stamper import estampar_logos_en_pdf, puede_estampar_logos
 
 
 PAGE_WIDTH, PAGE_HEIGHT = A4
@@ -18,28 +19,79 @@ MARGIN_TOP = 2.2 * cm
 MARGIN_BOTTOM = 2.0 * cm
 
 CONTENT_WIDTH = PAGE_WIDTH - MARGIN_LEFT - MARGIN_RIGHT
+INDICE_LINEAS_POR_PAGINA = 34
 
 
 def draw_header_footer(c, config, page_number, titulo_pdf):
+    c.saveState()
+
     footer = config.get("footer", "Confidencial - Uso interno")
     version = config.get("version", "v1.0")
+    margen_x = int(config.get("margen_x", MARGIN_LEFT))
+    header_y = PAGE_HEIGHT - int(config.get("header_offset", 35))
+    footer_y = int(config.get("footer_offset", 25))
+    logo_width = int(config.get("logo_width", 80))
+    logo_height = int(config.get("logo_height", 30))
+    texto_x = margen_x
+    logo_izquierdo = config.get("logo_izquierdo", "")
+    logo_central = config.get("logo_central", "")
+    logo_derecho = config.get("logo_derecho", "")
+
+    omitir_logos_overlay = config.get("_omitir_logos_overlay", False)
+
+    if config.get("mostrar_logo") and logo_izquierdo and os.path.exists(logo_izquierdo):
+        texto_x = margen_x + logo_width + 15
+
+    if config.get("mostrar_logo") and not omitir_logos_overlay:
+        if logo_izquierdo and os.path.exists(logo_izquierdo):
+            c.drawImage(
+                ImageReader(logo_izquierdo),
+                margen_x,
+                header_y - 15,
+                width=logo_width,
+                height=logo_height,
+                preserveAspectRatio=True,
+                mask="auto"
+            )
+
+        if logo_central and os.path.exists(logo_central):
+            c.drawImage(
+                ImageReader(logo_central),
+                (PAGE_WIDTH - logo_width) / 2,
+                header_y - 15,
+                width=logo_width,
+                height=logo_height,
+                preserveAspectRatio=True,
+                mask="auto"
+            )
+
+        if logo_derecho and os.path.exists(logo_derecho):
+            c.drawImage(
+                ImageReader(logo_derecho),
+                PAGE_WIDTH - margen_x - logo_width,
+                header_y - 15,
+                width=logo_width,
+                height=logo_height,
+                preserveAspectRatio=True,
+                mask="auto"
+            )
 
     c.setFont("Helvetica-Bold", 8)
     header_texto = config.get("header", "") or titulo_pdf
-    c.drawString(MARGIN_LEFT, PAGE_HEIGHT - 1.1 * cm, header_texto)
+    c.drawString(texto_x, header_y, header_texto)
 
     c.setFont("Helvetica", 8)
-    c.drawRightString(PAGE_WIDTH - MARGIN_RIGHT, PAGE_HEIGHT - 1.1 * cm, version)
+    c.drawRightString(PAGE_WIDTH - margen_x, header_y, version)
 
     c.line(
-        MARGIN_LEFT,
-        PAGE_HEIGHT - 1.35 * cm,
-        PAGE_WIDTH - MARGIN_RIGHT,
-        PAGE_HEIGHT - 1.35 * cm
+        margen_x,
+        header_y - 25,
+        PAGE_WIDTH - margen_x,
+        header_y - 25
     )
 
     c.setFont("Helvetica", 8)
-    c.drawString(MARGIN_LEFT, 1 * cm, footer)
+    c.drawString(margen_x, footer_y, footer)
     #c.drawRightString(PAGE_WIDTH - MARGIN_RIGHT, 1 * cm, f"Página {page_number}")
     if config.get("numerar_paginas", True):
         formato = config.get("formato_numeracion", "Página {pagina}")
@@ -50,9 +102,10 @@ def draw_header_footer(c, config, page_number, titulo_pdf):
                 total=config.get("total_paginas", "")
             )
 
-            c.drawRightString(PAGE_WIDTH - MARGIN_RIGHT, 1 * cm, texto_pagina)
+            c.drawRightString(PAGE_WIDTH - margen_x, footer_y, texto_pagina)
 
-    c.line(MARGIN_LEFT, 1.3 * cm, PAGE_WIDTH - MARGIN_RIGHT, 1.3 * cm)
+    c.line(margen_x, footer_y + 20, PAGE_WIDTH - margen_x, footer_y + 20)
+    c.restoreState()
 
 
 def draw_wrapped_text(c, text, x, y, max_width, font_name, font_size, leading):
@@ -80,6 +133,85 @@ def draw_wrapped_text(c, text, x, y, max_width, font_name, font_size, leading):
         y -= leading
 
     return y
+
+
+def collect_indice_entries(paginas, primera_pagina_contenido):
+    entries = []
+
+    for page_index, pagina in enumerate(paginas, start=primera_pagina_contenido):
+        for seccion in pagina.secciones:
+            for bloque in seccion.bloques:
+                if bloque.tipo == "heading" and bloque.texto:
+                    entries.append({
+                        "texto": bloque.texto,
+                        "nivel": bloque.nivel,
+                        "pagina": page_index,
+                    })
+
+    return entries
+
+
+def calcular_paginas_indice(entries):
+    if not entries:
+        return 0
+
+    return max(1, (len(entries) + INDICE_LINEAS_POR_PAGINA - 1) // INDICE_LINEAS_POR_PAGINA)
+
+
+def draw_indice_pages(c, entries, config, documento, primera_pagina_indice):
+    if not entries:
+        return 0
+
+    paginas_indice = calcular_paginas_indice(entries)
+
+    for page_idx in range(paginas_indice):
+        inicio = page_idx * INDICE_LINEAS_POR_PAGINA
+        fin = inicio + INDICE_LINEAS_POR_PAGINA
+        entries_pagina = entries[inicio:fin]
+
+        y = PAGE_HEIGHT - MARGIN_TOP
+        c.setFont("Helvetica-Bold", 22)
+        c.drawString(MARGIN_LEFT, y, "Índice")
+        y -= 1.2 * cm
+
+        for entry in entries_pagina:
+            nivel = max(1, min(3, int(entry.get("nivel", 1))))
+            indent = (nivel - 1) * 0.45 * cm
+            font_name = "Helvetica-Bold" if nivel == 1 else "Helvetica"
+            font_size = 10 if nivel == 1 else 9
+            page_text = str(entry["pagina"])
+            text_x = MARGIN_LEFT + indent
+            page_w = c.stringWidth(page_text, "Helvetica", 9)
+            max_text_w = CONTENT_WIDTH - indent - page_w - 0.5 * cm
+            texto = entry["texto"]
+
+            while texto and c.stringWidth(texto + "...", font_name, font_size) > max_text_w:
+                texto = texto[:-1]
+
+            if texto != entry["texto"]:
+                texto = texto.rstrip() + "..."
+
+            c.setFont(font_name, font_size)
+            c.drawString(text_x, y, texto)
+
+            text_w = c.stringWidth(texto, font_name, font_size)
+            dots_start = text_x + text_w + 0.15 * cm
+            dots_end = PAGE_WIDTH - MARGIN_RIGHT - page_w - 0.15 * cm
+
+            if dots_end > dots_start:
+                c.setDash(1, 2)
+                c.line(dots_start, y + 2, dots_end, y + 2)
+                c.setDash()
+
+            c.setFont("Helvetica", 9)
+            c.drawRightString(PAGE_WIDTH - MARGIN_RIGHT, y, page_text)
+            y -= 0.5 * cm
+
+        if not config.get("_omitir_header_footer", False):
+            draw_header_footer(c, config, primera_pagina_indice + page_idx, documento.titulo)
+        c.showPage()
+
+    return paginas_indice
 
 
 def draw_bloque(c, bloque, x, y, config):
@@ -190,7 +322,13 @@ def draw_bloque(c, bloque, x, y, config):
 
 
 def draw_portada(c, documento, config):
-    logo = config.get("logo", "")
+    logos = [
+        config.get("logo_izquierdo", ""),
+        config.get("logo_central", ""),
+        config.get("logo_derecho", ""),
+    ]
+    if not any(logos):
+        logos = [config.get("logo", "")]
 
     if config.get("mostrar_header_portada", False):
         header = config.get("header_portada", "") or documento.titulo
@@ -200,17 +338,31 @@ def draw_portada(c, documento, config):
 
     y = PAGE_HEIGHT - 3 * cm
 
-    if logo and os.path.exists(logo):
-        c.drawImage(
-            ImageReader(logo),
-            MARGIN_LEFT,
-            y - 2 * cm,
-            width=4 * cm,
-            height=2 * cm,
-            preserveAspectRatio=True,
-            mask="auto"
-        )
-        y -= 3 * cm
+    logo_width = int(config.get("logo_width", 80))
+    logo_height = int(config.get("logo_height", 30))
+    posiciones_x = [
+        MARGIN_LEFT,
+        (PAGE_WIDTH - logo_width) / 2,
+        PAGE_WIDTH - MARGIN_RIGHT - logo_width,
+    ]
+    logos_dibujados = False
+
+    if config.get("mostrar_logo"):
+        for logo, x in zip(logos, posiciones_x):
+            if logo and os.path.exists(logo):
+                c.drawImage(
+                    ImageReader(logo),
+                    x,
+                    y - logo_height,
+                    width=logo_width,
+                    height=logo_height,
+                    preserveAspectRatio=True,
+                    mask="auto"
+                )
+                logos_dibujados = True
+
+    if logos_dibujados:
+        y -= logo_height + 1 * cm
 
     c.setFont("Helvetica-Bold", 24)
     c.drawString(MARGIN_LEFT, y, config.get("titulo_portada", "Documentación"))
@@ -241,31 +393,65 @@ def draw_portada(c, documento, config):
 
 
 def exportar_documento_pdf_v2(documento, ruta_salida, config):
+    usar_estampado_logos = puede_estampar_logos()
+    config_pdf = config.copy()
+
+    if usar_estampado_logos:
+        config_pdf["_omitir_logos_overlay"] = True
+
     paginas = dividir_en_paginas(documento)
-    total_paginas = len(paginas) + (1 if config.get("agregar_portada", True) else 0)
-    config["total_paginas"] = total_paginas
+    paginas_portada = 1 if config_pdf.get("agregar_portada", True) else 0
+    agregar_indice = bool(config_pdf.get("agregar_indice", False))
+    entries_indice = []
+    paginas_indice = 0
+
+    if agregar_indice:
+        entries_base = collect_indice_entries(paginas, paginas_portada + 1)
+        paginas_indice = calcular_paginas_indice(entries_base)
+        primera_pagina_contenido = paginas_portada + paginas_indice + 1
+        entries_indice = collect_indice_entries(paginas, primera_pagina_contenido)
+
+    total_paginas = len(paginas) + paginas_portada + paginas_indice
+    config_pdf["total_paginas"] = total_paginas
 
     c = canvas.Canvas(ruta_salida, pagesize=A4)
 
     page_number = 1
 
-    if config.get("agregar_portada", True):
-        draw_portada(c, documento, config)
+    if config_pdf.get("agregar_portada", True):
+        draw_portada(c, documento, config_pdf)
         c.showPage()
         page_number += 1
 
-    for pagina in paginas:
-        draw_header_footer(c, config, page_number, documento.titulo)
+    if entries_indice:
+        draw_indice_pages(
+            c,
+            entries_indice,
+            config_pdf,
+            documento,
+            primera_pagina_indice=page_number
+        )
+        page_number += paginas_indice
 
+    for pagina in paginas:
         y = PAGE_HEIGHT - MARGIN_TOP
 
         for seccion in pagina.secciones:
             for bloque in seccion.bloques:
-                y = draw_bloque(c, bloque, MARGIN_LEFT, y, config)
+                y = draw_bloque(c, bloque, MARGIN_LEFT, y, config_pdf)
 
             y -= 6
 
+        if not config_pdf.get("_omitir_header_footer", False):
+            draw_header_footer(c, config_pdf, page_number, documento.titulo)
         c.showPage()
         page_number += 1
 
     c.save()
+
+    if usar_estampado_logos:
+        estampar_logos_en_pdf(
+            ruta_salida,
+            config,
+            omitir_primera_pagina=bool(config_pdf.get("agregar_portada", True)),
+        )

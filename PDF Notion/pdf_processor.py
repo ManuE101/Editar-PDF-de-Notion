@@ -6,32 +6,90 @@ from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
 from reportlab.lib.utils import ImageReader
 
+from logo_stamper import estampar_logos_en_pdf, puede_estampar_logos
 from portada import crear_portada
 from utils import formatear_titulo, crear_nombre_salida
 
 
-def crear_overlay(ancho, alto, titulo, config, pagina_actual, total_paginas):
+def crear_overlay(ancho, alto, titulo, config, pagina_actual, total_paginas, area_visible=None):
     buffer = BytesIO()
     c = canvas.Canvas(buffer, pagesize=(ancho, alto))
 
+    visible_x = 0
+    visible_y = 0
+    visible_ancho = ancho
+    visible_alto = alto
+
+    if area_visible:
+        visible_x, visible_y, visible_ancho, visible_alto = area_visible
+
     margen_x = int(config.get("margen_x", 40))
-    header_y = alto - int(config.get("header_offset", 35))
-    footer_y = int(config.get("footer_offset", 25))
+    header_y = visible_y + visible_alto - int(config.get("header_offset", 35))
+    footer_y = visible_y + int(config.get("footer_offset", 25))
 
-    logo = config.get("logo", "")
-    texto_x = margen_x
+    texto_x = visible_x + margen_x
 
-    if config.get("mostrar_logo") and logo and os.path.exists(logo):
-        c.drawImage(
-            ImageReader(logo),
-            margen_x,
-            header_y - 15,
-            width=int(config.get("logo_width", 80)),
-            height=int(config.get("logo_height", 30)),
-            preserveAspectRatio=True,
-            mask="auto"
-        )
-        texto_x = margen_x + int(config.get("logo_width", 80)) + 15
+    # if config.get("mostrar_logo") and logo and os.path.exists(logo):
+    #     c.drawImage(
+    #         ImageReader(logo),
+    #         margen_x,
+    #         header_y - 15,
+    #         width=int(config.get("logo_width", 80)),
+    #         height=int(config.get("logo_height", 30)),
+    #         preserveAspectRatio=True,
+    #         mask="auto"
+    #     )
+    #     texto_x = margen_x + int(config.get("logo_width", 80)) + 15
+
+    # c.setFont("Helvetica-Bold", 10)
+    # c.drawString(texto_x, header_y, titulo)
+
+    logo_width = int(config.get("logo_width", 80))
+    logo_height = int(config.get("logo_height", 30))
+
+    logo_izquierdo = config.get("logo_izquierdo", "")
+    logo_central = config.get("logo_central", "")
+    logo_derecho = config.get("logo_derecho", "")
+
+    omitir_logos_overlay = config.get("_omitir_logos_overlay", False)
+
+    if config.get("mostrar_logo") and logo_izquierdo and os.path.exists(logo_izquierdo):
+        texto_x = visible_x + margen_x + logo_width + 15
+
+    if config.get("mostrar_logo") and not omitir_logos_overlay:
+
+        if logo_izquierdo and os.path.exists(logo_izquierdo):
+            c.drawImage(
+                ImageReader(logo_izquierdo),
+                visible_x + margen_x,
+                header_y - 15,
+                width=logo_width,
+                height=logo_height,
+                preserveAspectRatio=True,
+                mask="auto"
+            )
+
+        if logo_central and os.path.exists(logo_central):
+            c.drawImage(
+                ImageReader(logo_central),
+                visible_x + (visible_ancho - logo_width) / 2,
+                header_y - 15,
+                width=logo_width,
+                height=logo_height,
+                preserveAspectRatio=True,
+                mask="auto"
+            )
+
+        if logo_derecho and os.path.exists(logo_derecho):
+            c.drawImage(
+                ImageReader(logo_derecho),
+                visible_x + visible_ancho - margen_x - logo_width,
+                header_y - 15,
+                width=logo_width,
+                height=logo_height,
+                preserveAspectRatio=True,
+                mask="auto"
+            )
 
     c.setFont("Helvetica-Bold", 10)
     c.drawString(texto_x, header_y, titulo)
@@ -39,13 +97,18 @@ def crear_overlay(ancho, alto, titulo, config, pagina_actual, total_paginas):
     if config.get("mostrar_fecha"):
         fecha = datetime.now().strftime("%d/%m/%Y")
         c.setFont("Helvetica", 8)
-        c.drawRightString(ancho - margen_x, header_y, fecha)
+        c.drawRightString(visible_x + visible_ancho - margen_x, header_y, fecha)
 
-    c.line(margen_x, header_y - 25, ancho - margen_x, header_y - 25)
+    c.line(
+        visible_x + margen_x,
+        header_y - 25,
+        visible_x + visible_ancho - margen_x,
+        header_y - 25
+    )
 
     c.setFont("Helvetica", 8)
     c.drawString(
-        margen_x,
+        visible_x + margen_x,
         footer_y,
         f'{config.get("footer", "")} | {config.get("version", "")}'
     )
@@ -60,12 +123,17 @@ def crear_overlay(ancho, alto, titulo, config, pagina_actual, total_paginas):
             )
 
             c.drawRightString(
-                ancho - margen_x,
+                visible_x + visible_ancho - margen_x,
                 footer_y,
                 texto_pagina
             )
 
-    c.line(margen_x, footer_y + 20, ancho - margen_x, footer_y + 20)
+    c.line(
+        visible_x + margen_x,
+        footer_y + 20,
+        visible_x + visible_ancho - margen_x,
+        footer_y + 20
+    )
 
     c.save()
     buffer.seek(0)
@@ -76,6 +144,11 @@ def crear_overlay(ancho, alto, titulo, config, pagina_actual, total_paginas):
 def procesar_pdf(ruta_pdf, ruta_salida, titulo, config):
     reader = PdfReader(ruta_pdf)
     writer = PdfWriter()
+    usar_estampado_logos = puede_estampar_logos()
+    config_overlay = config.copy()
+
+    if usar_estampado_logos:
+        config_overlay["_omitir_logos_overlay"] = True
 
     total_original = len(reader.pages)
     total_final = total_original + (1 if config.get("agregar_portada") else 0)
@@ -86,23 +159,47 @@ def procesar_pdf(ruta_pdf, ruta_salida, titulo, config):
     for i, pagina in enumerate(reader.pages, start=1):
         pagina_final = i + (1 if config.get("agregar_portada") else 0)
 
-        ancho = float(pagina.mediabox.width)
-        alto = float(pagina.mediabox.height)
+        if getattr(pagina, "rotation", 0) and hasattr(pagina, "transfer_rotation_to_content"):
+            pagina.transfer_rotation_to_content()
+
+        media_box = pagina.mediabox
+        crop_box = pagina.cropbox
+
+        ancho = float(media_box.width)
+        alto = float(media_box.height)
+        area_visible = (
+            float(crop_box.left),
+            float(crop_box.bottom),
+            float(crop_box.width),
+            float(crop_box.height),
+        )
 
         overlay = crear_overlay(
             ancho,
             alto,
             titulo,
-            config,
+            config_overlay,
             pagina_final,
-            total_final
+            total_final,
+            area_visible
         )
 
-        pagina.merge_page(overlay)
+        try:
+            pagina.merge_page(overlay, over=True)
+        except TypeError:
+            pagina.merge_page(overlay)
+
         writer.add_page(pagina)
 
     with open(ruta_salida, "wb") as file:
         writer.write(file)
+
+    if usar_estampado_logos:
+        estampar_logos_en_pdf(
+            ruta_salida,
+            config,
+            omitir_primera_pagina=bool(config.get("agregar_portada")),
+        )
 
 
 def procesar_carpeta(config, callback_estado=None, callback_progreso=None):

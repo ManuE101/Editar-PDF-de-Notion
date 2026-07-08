@@ -77,15 +77,18 @@ def formatear_numeracion(config):
         return "Página 1"
 
 
-def generar_preview_pdf(ruta_pdf, config, ancho_preview=360, alto_preview=None):
+def generar_base_preview_pdf(ruta_pdf, ancho_preview=360, alto_preview=None):
     if not ruta_pdf or not os.path.exists(ruta_pdf):
         return None
 
     documento = fitz.open(ruta_pdf)
-    pagina = documento[0]
+    try:
+        pagina = documento[0]
 
-    pix = pagina.get_pixmap(matrix=fitz.Matrix(1, 1), alpha=False)
-    imagen = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        pix = pagina.get_pixmap(matrix=fitz.Matrix(1, 1), alpha=False)
+        imagen = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+    finally:
+        documento.close()
 
     escala_ancho = ancho_preview / imagen.width
     escala_alto = alto_preview / imagen.height if alto_preview else escala_ancho
@@ -95,7 +98,16 @@ def generar_preview_pdf(ruta_pdf, config, ancho_preview=360, alto_preview=None):
 
     imagen = imagen.resize((ancho_preview, nuevo_alto))
 
+    return imagen, escala
+
+
+def aplicar_overlay_preview(imagen_base, escala, ruta_pdf, config):
+    if imagen_base is None or escala is None:
+        return None
+
+    imagen = imagen_base.copy()
     draw = ImageDraw.Draw(imagen)
+    ancho_preview, nuevo_alto = imagen.size
 
     header_y = int(config.get("header_offset", 35) * escala)
     footer_y = nuevo_alto - int(config.get("footer_offset", 25) * escala)
@@ -191,6 +203,14 @@ def generar_preview_pdf(ruta_pdf, config, ancho_preview=360, alto_preview=None):
         width=1
     )
 
-    documento.close()
-
     return imagen
+
+
+def generar_preview_pdf(ruta_pdf, config, ancho_preview=360, alto_preview=None):
+    resultado_base = generar_base_preview_pdf(ruta_pdf, ancho_preview, alto_preview)
+
+    if resultado_base is None:
+        return None
+
+    imagen_base, escala = resultado_base
+    return aplicar_overlay_preview(imagen_base, escala, ruta_pdf, config)

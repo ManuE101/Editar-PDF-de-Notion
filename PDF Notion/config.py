@@ -4,11 +4,18 @@ import os
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
+PROFILES_FILE = os.path.join(BASE_DIR, "profiles.json")
 
 
 DEFAULT_CONFIG = {
     "entrada": "Entrada",
     "salida": "Salida",
+    "ultima_carpeta_logos": "",
+    "ultima_carpeta_pdfs": "",
+    "ultima_carpeta_zips": "",
+    "ultima_carpeta_word": "",
+    "ultima_carpeta_salida": "",
+    "perfil_actual": "Predeterminado",
     # "logo": "assets/logo.png",
     "logo_izquierdo": "",
     "logo_central": "",
@@ -35,6 +42,34 @@ DEFAULT_CONFIG = {
     "header_portada": "",
     "footer_portada": ""
 }
+
+
+PROFILE_KEYS = [
+    "logo_izquierdo",
+    "logo_central",
+    "logo_derecho",
+    "header",
+    "footer",
+    "version",
+    "mostrar_logo",
+    "mostrar_fecha",
+    "numerar_paginas",
+    "formato_numeracion",
+    "agregar_portada",
+    "agregar_indice",
+    "header_offset",
+    "footer_offset",
+    "margen_x",
+    "logo_width",
+    "logo_height",
+    "titulo_portada",
+    "subtitulo_portada",
+    "area_portada",
+    "mostrar_header_portada",
+    "mostrar_footer_portada",
+    "header_portada",
+    "footer_portada",
+]
 
 
 MOJIBAKE_REPLACEMENTS = {
@@ -105,3 +140,43 @@ def guardar_config(config):
 
     with open(CONFIG_FILE, "w", encoding="utf-8") as file:
         json.dump(config, file, indent=4, ensure_ascii=False)
+
+
+def extraer_config_perfil(config):
+    return {
+        clave: config.get(clave, DEFAULT_CONFIG.get(clave))
+        for clave in PROFILE_KEYS
+    }
+
+
+def cargar_perfiles():
+    if not os.path.exists(PROFILES_FILE):
+        perfiles = {
+            "Predeterminado": extraer_config_perfil(cargar_config())
+        }
+        guardar_perfiles(perfiles)
+        return perfiles
+
+    with open(PROFILES_FILE, "r", encoding="utf-8-sig") as file:
+        perfiles = json.load(file)
+
+    if not isinstance(perfiles, dict) or not perfiles:
+        perfiles = {
+            "Predeterminado": extraer_config_perfil(cargar_config())
+        }
+
+    return {
+        nombre: normalizar_config(perfil)
+        for nombre, perfil in perfiles.items()
+        if isinstance(perfil, dict)
+    }
+
+
+def guardar_perfiles(perfiles):
+    perfiles_normalizados = {
+        nombre: extraer_config_perfil(normalizar_config(perfil))
+        for nombre, perfil in perfiles.items()
+    }
+
+    with open(PROFILES_FILE, "w", encoding="utf-8") as file:
+        json.dump(perfiles_normalizados, file, indent=4, ensure_ascii=False)

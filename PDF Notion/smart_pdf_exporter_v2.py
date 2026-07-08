@@ -392,13 +392,23 @@ def draw_portada(c, documento, config):
         c.line(MARGIN_LEFT, 1.3 * cm, PAGE_WIDTH - MARGIN_RIGHT, 1.3 * cm)
 
 
-def exportar_documento_pdf_v2(documento, ruta_salida, config):
+def exportar_documento_pdf_v2(
+    documento,
+    ruta_salida,
+    config,
+    callback_estado=None,
+    callback_progreso=None,
+):
     usar_estampado_logos = puede_estampar_logos()
     config_pdf = config.copy()
 
     if usar_estampado_logos:
         config_pdf["_omitir_logos_overlay"] = True
 
+    if callback_estado:
+        callback_estado("Distribuyendo el contenido en páginas...")
+    if callback_progreso:
+        callback_progreso(0.05)
     paginas = dividir_en_paginas(documento)
     paginas_portada = 1 if config_pdf.get("agregar_portada", True) else 0
     agregar_indice = bool(config_pdf.get("agregar_indice", False))
@@ -419,11 +429,15 @@ def exportar_documento_pdf_v2(documento, ruta_salida, config):
     page_number = 1
 
     if config_pdf.get("agregar_portada", True):
+        if callback_estado:
+            callback_estado("Generando portada...")
         draw_portada(c, documento, config_pdf)
         c.showPage()
         page_number += 1
 
     if entries_indice:
+        if callback_estado:
+            callback_estado("Generando índice automático...")
         draw_indice_pages(
             c,
             entries_indice,
@@ -433,7 +447,12 @@ def exportar_documento_pdf_v2(documento, ruta_salida, config):
         )
         page_number += paginas_indice
 
-    for pagina in paginas:
+    total_contenido = len(paginas)
+    for indice_pagina, pagina in enumerate(paginas, start=1):
+        if callback_estado:
+            callback_estado(
+                f"Generando página de contenido {indice_pagina} de {total_contenido}..."
+            )
         y = PAGE_HEIGHT - MARGIN_TOP
 
         for seccion in pagina.secciones:
@@ -446,12 +465,24 @@ def exportar_documento_pdf_v2(documento, ruta_salida, config):
             draw_header_footer(c, config_pdf, page_number, documento.titulo)
         c.showPage()
         page_number += 1
+        if callback_progreso:
+            callback_progreso(0.15 + (0.70 * indice_pagina / max(total_contenido, 1)))
 
+    if callback_estado:
+        callback_estado("Guardando el documento...")
+    if callback_progreso:
+        callback_progreso(0.88)
     c.save()
 
     if usar_estampado_logos:
+        if callback_estado:
+            callback_estado("Aplicando logos...")
+        if callback_progreso:
+            callback_progreso(0.93)
         estampar_logos_en_pdf(
             ruta_salida,
             config,
             omitir_primera_pagina=bool(config_pdf.get("agregar_portada", True)),
         )
+    if callback_progreso:
+        callback_progreso(1.0)

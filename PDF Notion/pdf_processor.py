@@ -1,6 +1,7 @@
 from io import BytesIO
 from datetime import datetime
 import os
+import tempfile
 
 from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
@@ -9,6 +10,8 @@ from reportlab.lib.utils import ImageReader
 from logo_stamper import estampar_logos_en_pdf, puede_estampar_logos
 from portada import crear_portada
 from utils import formatear_titulo, crear_nombre_salida
+from error_messages import resumir_error
+from process_control import ProcesoCancelado
 
 
 def crear_overlay(ancho, alto, titulo, config, pagina_actual, total_paginas, area_visible=None):
@@ -141,7 +144,19 @@ def crear_overlay(ancho, alto, titulo, config, pagina_actual, total_paginas, are
     return PdfReader(buffer).pages[0]
 
 
-def procesar_pdf(ruta_pdf, ruta_salida, titulo, config):
+def procesar_pdf(
+    ruta_pdf,
+    ruta_salida,
+    titulo,
+    config,
+    callback_estado=None,
+    callback_progreso=None,
+):
+    if callback_estado:
+        callback_estado("Leyendo y validando el PDF...")
+    if callback_progreso:
+        callback_progreso(0.05)
+
     reader = PdfReader(ruta_pdf)
     writer = PdfWriter()
     usar_estampado_logos = puede_estampar_logos()
@@ -154,9 +169,15 @@ def procesar_pdf(ruta_pdf, ruta_salida, titulo, config):
     total_final = total_original + (1 if config.get("agregar_portada") else 0)
 
     if config.get("agregar_portada"):
+        if callback_estado:
+            callback_estado("Generando portada...")
         writer.add_page(crear_portada(titulo, config))
+    if callback_progreso:
+        callback_progreso(0.12)
 
     for i, pagina in enumerate(reader.pages, start=1):
+        if callback_estado:
+            callback_estado(f"Aplicando diseño a la página {i} de {total_original}...")
         pagina_final = i + (1 if config.get("agregar_portada") else 0)
 
         if getattr(pagina, "rotation", 0) and hasattr(pagina, "transfer_rotation_to_content"):
@@ -190,19 +211,49 @@ def procesar_pdf(ruta_pdf, ruta_salida, titulo, config):
             pagina.merge_page(overlay)
 
         writer.add_page(pagina)
+        if callback_progreso:
+            avance_paginas = i / max(total_original, 1)
+            callback_progreso(0.12 + (avance_paginas * 0.70))
 
-    with open(ruta_salida, "wb") as file:
-        writer.write(file)
+    descriptor, ruta_temporal = tempfile.mkstemp(
+        prefix="pdf_notion_",
+        suffix=".pdf",
+        dir=os.path.dirname(os.path.abspath(ruta_salida)),
+    )
+    os.close(descriptor)
+    try:
+        if callback_estado:
+            callback_estado("Guardando el PDF...")
+        if callback_progreso:
+            callback_progreso(0.86)
+        with open(ruta_temporal, "wb") as file:
+            writer.write(file)
 
-    if usar_estampado_logos:
-        estampar_logos_en_pdf(
-            ruta_salida,
-            config,
-            omitir_primera_pagina=bool(config.get("agregar_portada")),
-        )
+        if usar_estampado_logos:
+            if callback_estado:
+                callback_estado("Aplicando logos...")
+            if callback_progreso:
+                callback_progreso(0.92)
+            estampar_logos_en_pdf(
+                ruta_temporal,
+                config,
+                omitir_primera_pagina=bool(config.get("agregar_portada")),
+            )
+
+        if callback_estado:
+            callback_estado("Finalizando el PDF...")
+        if callback_progreso:
+            callback_progreso(0.99)
+        os.replace(ruta_temporal, ruta_salida)
+    finally:
+        try:
+            if os.path.exists(ruta_temporal):
+                os.remove(ruta_temporal)
+        except OSError:
+            pass
 
 
-def procesar_carpeta(config, callback_estado=None, callback_progreso=None):
+def procesar_carpeta(config, callback_estado=None, callback_progreso=None, callback_sobrescritura=None):
     entrada = config.get("entrada", "Entrada")
     salida = config.get("salida", "Salida")
 
@@ -217,24 +268,50 @@ def procesar_carpeta(config, callback_estado=None, callback_progreso=None):
     total = len(archivos_pdf)
 
     if total == 0:
-        return 0, 0
+        return 0, 0, []
 
     procesados = 0
+    errores = []
 
     for index, archivo in enumerate(archivos_pdf, start=1):
         if callback_estado:
             callback_estado(f"Procesando {index} de {total}: {archivo}")
 
         if callback_progreso:
-            callback_progreso(index / total)
+            callback_progreso((index - 1) / total)
 
         ruta_pdf = os.path.join(entrada, archivo)
         titulo = formatear_titulo(archivo)
         nombre_salida = crear_nombre_salida(archivo)
         ruta_salida = os.path.join(salida, nombre_salida)
 
-        procesar_pdf(ruta_pdf, ruta_salida, titulo, config)
+        if os.path.exists(ruta_salida) and callback_sobrescritura:
+            if not callback_sobrescritura(ruta_salida):
+                if callback_progreso:
+                    callback_progreso(index / total)
+                continue
 
-        procesados += 1
+        def progreso_archivo(valor):
+            if callback_progreso:
+                callback_progreso(((index - 1) + valor) / total)
 
-    return procesados, total
+        def estado_archivo(etapa):
+            if callback_estado:
+                callback_estado(f"{archivo} · {etapa}")
+
+        try:
+            procesar_pdf(
+                ruta_pdf,
+                ruta_salida,
+                titulo,
+                config,
+                callback_estado=estado_archivo,
+                callback_progreso=progreso_archivo,
+            )
+            procesados += 1
+        except ProcesoCancelado:
+            raise
+        except Exception as error:
+            errores.append(resumir_error(error, ruta_pdf))
+
+    return procesados, total, errores

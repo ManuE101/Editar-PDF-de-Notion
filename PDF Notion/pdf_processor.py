@@ -14,6 +14,22 @@ from error_messages import resumir_error
 from process_control import ProcesoCancelado
 
 
+FUENTES_PDF = {
+    "Helvetica",
+    "Helvetica-Bold",
+    "Helvetica-Oblique",
+    "Times-Roman",
+    "Times-Bold",
+    "Courier",
+    "Courier-Bold",
+}
+
+
+def fuente_pdf(config, clave, fallback):
+    fuente = config.get(clave, fallback)
+    return fuente if fuente in FUENTES_PDF else fallback
+
+
 def crear_overlay(ancho, alto, titulo, config, pagina_actual, total_paginas, area_visible=None):
     buffer = BytesIO()
     c = canvas.Canvas(buffer, pagesize=(ancho, alto))
@@ -29,8 +45,14 @@ def crear_overlay(ancho, alto, titulo, config, pagina_actual, total_paginas, are
     margen_x = int(config.get("margen_x", 40))
     header_y = visible_y + visible_alto - int(config.get("header_offset", 35))
     footer_y = visible_y + int(config.get("footer_offset", 25))
+    header_text_offset_x = int(config.get("header_text_offset_x", 0))
+    footer_text_offset_x = int(config.get("footer_text_offset_x", 0))
+    fuente_header = fuente_pdf(config, "fuente_header", "Helvetica-Bold")
+    fuente_footer = fuente_pdf(config, "fuente_footer", "Helvetica")
+    tamano_header = int(config.get("tamano_fuente_header", 10))
+    tamano_footer = int(config.get("tamano_fuente_footer", 8))
 
-    texto_x = visible_x + margen_x
+    texto_x = visible_x + margen_x + header_text_offset_x
 
     # if config.get("mostrar_logo") and logo and os.path.exists(logo):
     #     c.drawImage(
@@ -57,7 +79,7 @@ def crear_overlay(ancho, alto, titulo, config, pagina_actual, total_paginas, are
     omitir_logos_overlay = config.get("_omitir_logos_overlay", False)
 
     if config.get("mostrar_logo") and logo_izquierdo and os.path.exists(logo_izquierdo):
-        texto_x = visible_x + margen_x + logo_width + 15
+        texto_x = visible_x + margen_x + logo_width + 15 + header_text_offset_x
 
     if config.get("mostrar_logo") and not omitir_logos_overlay:
 
@@ -94,24 +116,25 @@ def crear_overlay(ancho, alto, titulo, config, pagina_actual, total_paginas, are
                 mask="auto"
             )
 
-    c.setFont("Helvetica-Bold", 10)
+    c.setFont(fuente_header, tamano_header)
     c.drawString(texto_x, header_y, titulo)
 
     if config.get("mostrar_fecha"):
         fecha = datetime.now().strftime("%d/%m/%Y")
-        c.setFont("Helvetica", 8)
+        c.setFont("Helvetica", max(6, min(14, tamano_footer)))
         c.drawRightString(visible_x + visible_ancho - margen_x, header_y, fecha)
 
-    c.line(
-        visible_x + margen_x,
-        header_y - 25,
-        visible_x + visible_ancho - margen_x,
-        header_y - 25
-    )
+    if config.get("mostrar_lineas_separadoras", True):
+        c.line(
+            visible_x + margen_x,
+            header_y - 25,
+            visible_x + visible_ancho - margen_x,
+            header_y - 25
+        )
 
-    c.setFont("Helvetica", 8)
+    c.setFont(fuente_footer, tamano_footer)
     c.drawString(
-        visible_x + margen_x,
+        visible_x + margen_x + footer_text_offset_x,
         footer_y,
         f'{config.get("footer", "")} | {config.get("version", "")}'
     )
@@ -131,12 +154,13 @@ def crear_overlay(ancho, alto, titulo, config, pagina_actual, total_paginas, are
                 texto_pagina
             )
 
-    c.line(
-        visible_x + margen_x,
-        footer_y + 20,
-        visible_x + visible_ancho - margen_x,
-        footer_y + 20
-    )
+    if config.get("mostrar_lineas_separadoras", True):
+        c.line(
+            visible_x + margen_x,
+            footer_y + 20,
+            visible_x + visible_ancho - margen_x,
+            footer_y + 20
+        )
 
     c.save()
     buffer.seek(0)

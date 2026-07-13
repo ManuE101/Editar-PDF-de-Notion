@@ -22,6 +22,22 @@ CONTENT_WIDTH = PAGE_WIDTH - MARGIN_LEFT - MARGIN_RIGHT
 INDICE_LINEAS_POR_PAGINA = 34
 
 
+FUENTES_PDF = {
+    "Helvetica",
+    "Helvetica-Bold",
+    "Helvetica-Oblique",
+    "Times-Roman",
+    "Times-Bold",
+    "Courier",
+    "Courier-Bold",
+}
+
+
+def fuente_pdf(config, clave, fallback):
+    fuente = config.get(clave, fallback)
+    return fuente if fuente in FUENTES_PDF else fallback
+
+
 def draw_header_footer(c, config, page_number, titulo_pdf):
     c.saveState()
 
@@ -32,7 +48,13 @@ def draw_header_footer(c, config, page_number, titulo_pdf):
     footer_y = int(config.get("footer_offset", 25))
     logo_width = int(config.get("logo_width", 80))
     logo_height = int(config.get("logo_height", 30))
-    texto_x = margen_x
+    header_text_offset_x = int(config.get("header_text_offset_x", 0))
+    footer_text_offset_x = int(config.get("footer_text_offset_x", 0))
+    fuente_header = fuente_pdf(config, "fuente_header", "Helvetica-Bold")
+    fuente_footer = fuente_pdf(config, "fuente_footer", "Helvetica")
+    tamano_header = int(config.get("tamano_fuente_header", 10))
+    tamano_footer = int(config.get("tamano_fuente_footer", 8))
+    texto_x = margen_x + header_text_offset_x
     logo_izquierdo = config.get("logo_izquierdo", "")
     logo_central = config.get("logo_central", "")
     logo_derecho = config.get("logo_derecho", "")
@@ -40,7 +62,7 @@ def draw_header_footer(c, config, page_number, titulo_pdf):
     omitir_logos_overlay = config.get("_omitir_logos_overlay", False)
 
     if config.get("mostrar_logo") and logo_izquierdo and os.path.exists(logo_izquierdo):
-        texto_x = margen_x + logo_width + 15
+        texto_x = margen_x + logo_width + 15 + header_text_offset_x
 
     if config.get("mostrar_logo") and not omitir_logos_overlay:
         if logo_izquierdo and os.path.exists(logo_izquierdo):
@@ -76,22 +98,23 @@ def draw_header_footer(c, config, page_number, titulo_pdf):
                 mask="auto"
             )
 
-    c.setFont("Helvetica-Bold", 8)
+    c.setFont(fuente_header, tamano_header)
     header_texto = config.get("header", "") or titulo_pdf
     c.drawString(texto_x, header_y, header_texto)
 
-    c.setFont("Helvetica", 8)
+    c.setFont("Helvetica", max(6, min(14, tamano_footer)))
     c.drawRightString(PAGE_WIDTH - margen_x, header_y, version)
 
-    c.line(
-        margen_x,
-        header_y - 25,
-        PAGE_WIDTH - margen_x,
-        header_y - 25
-    )
+    if config.get("mostrar_lineas_separadoras", True):
+        c.line(
+            margen_x,
+            header_y - 25,
+            PAGE_WIDTH - margen_x,
+            header_y - 25
+        )
 
-    c.setFont("Helvetica", 8)
-    c.drawString(margen_x, footer_y, footer)
+    c.setFont(fuente_footer, tamano_footer)
+    c.drawString(margen_x + footer_text_offset_x, footer_y, footer)
     #c.drawRightString(PAGE_WIDTH - MARGIN_RIGHT, 1 * cm, f"Página {page_number}")
     if config.get("numerar_paginas", True):
         formato = config.get("formato_numeracion", "Página {pagina}")
@@ -104,7 +127,8 @@ def draw_header_footer(c, config, page_number, titulo_pdf):
 
             c.drawRightString(PAGE_WIDTH - margen_x, footer_y, texto_pagina)
 
-    c.line(margen_x, footer_y + 20, PAGE_WIDTH - margen_x, footer_y + 20)
+    if config.get("mostrar_lineas_separadoras", True):
+        c.line(margen_x, footer_y + 20, PAGE_WIDTH - margen_x, footer_y + 20)
     c.restoreState()
 
 

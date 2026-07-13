@@ -43,8 +43,9 @@ class PDFNotionApp(TkinterDnD.Tk):
         ctk.CTk._windows_set_titlebar_color = lambda *args, **kwargs: None
 
         self.title("PDF Notion")
-        self.geometry("1180x780")
-        self.resizable(False, False)
+        self.geometry("1240x820")
+        self.minsize(1120, 740)
+        self.resizable(True, True)
 
         self.config_data = cargar_config()
         self.perfiles_data = cargar_perfiles()
@@ -87,12 +88,18 @@ class PDFNotionApp(TkinterDnD.Tk):
         self.formato_numeracion_var = ctk.StringVar(
             value=self.config_data.get("formato_numeracion", "Página {pagina}")
         )
+        self.fuente_header_var = ctk.StringVar(value=self.config_data.get("fuente_header", "Helvetica-Bold"))
+        self.fuente_footer_var = ctk.StringVar(value=self.config_data.get("fuente_footer", "Helvetica"))
 
         self.header_offset_var = ctk.IntVar(value=int(self.config_data["header_offset"]))
         self.footer_offset_var = ctk.IntVar(value=int(self.config_data["footer_offset"]))
         self.margen_x_var = ctk.IntVar(value=int(self.config_data["margen_x"]))
         self.logo_width_var = ctk.IntVar(value=int(self.config_data["logo_width"]))
         self.logo_height_var = ctk.IntVar(value=int(self.config_data["logo_height"]))
+        self.tamano_fuente_header_var = ctk.IntVar(value=int(self.config_data.get("tamano_fuente_header", 10)))
+        self.tamano_fuente_footer_var = ctk.IntVar(value=int(self.config_data.get("tamano_fuente_footer", 8)))
+        self.header_text_offset_x_var = ctk.IntVar(value=int(self.config_data.get("header_text_offset_x", 0)))
+        self.footer_text_offset_x_var = ctk.IntVar(value=int(self.config_data.get("footer_text_offset_x", 0)))
 
         self.titulo_portada_var = ctk.StringVar(value=self.config_data["titulo_portada"])
         self.subtitulo_portada_var = ctk.StringVar(value=self.config_data["subtitulo_portada"])
@@ -101,6 +108,7 @@ class PDFNotionApp(TkinterDnD.Tk):
         self.mostrar_logo_var = ctk.BooleanVar(value=self.config_data["mostrar_logo"])
         self.mostrar_fecha_var = ctk.BooleanVar(value=self.config_data["mostrar_fecha"])
         self.numerar_paginas_var = ctk.BooleanVar(value=self.config_data["numerar_paginas"])
+        self.mostrar_lineas_separadoras_var = ctk.BooleanVar(value=self.config_data.get("mostrar_lineas_separadoras", True))
         self.agregar_portada_var = ctk.BooleanVar(value=self.config_data["agregar_portada"])
         self.agregar_indice_var = ctk.BooleanVar(value=self.config_data.get("agregar_indice", False))
 
@@ -155,7 +163,7 @@ class PDFNotionApp(TkinterDnD.Tk):
 
         panel_config = ctk.CTkScrollableFrame(
             body,
-            width=560,
+            width=590,
             height=640,
             corner_radius=16,
             fg_color="#171B22",
@@ -166,7 +174,7 @@ class PDFNotionApp(TkinterDnD.Tk):
 
         panel_preview = ctk.CTkFrame(
             body,
-            width=550,
+            width=560,
             height=640,
             corner_radius=16,
             fg_color="#171B22"
@@ -192,7 +200,9 @@ class PDFNotionApp(TkinterDnD.Tk):
                 card,
                 text=subtitulo,
                 font=("Arial", 11),
-                text_color="#9AA6B5"
+                text_color="#9AA6B5",
+                wraplength=500,
+                justify="left"
             ).pack(anchor="w", padx=18, pady=(0, 10))
 
         return card
@@ -442,8 +452,42 @@ class PDFNotionApp(TkinterDnD.Tk):
         self.crear_slider(card_contenido, "Header desde arriba", self.header_offset_var, 10, 150)
         self.crear_slider(card_contenido, "Footer desde abajo", self.footer_offset_var, 10, 150)
         self.crear_slider(card_contenido, "Margen izquierdo/derecho", self.margen_x_var, 10, 120)
+        self.crear_slider(card_contenido, "Tamaño texto header", self.tamano_fuente_header_var, 6, 22, unidad="pt")
+        self.crear_slider(card_contenido, "Tamaño texto footer", self.tamano_fuente_footer_var, 6, 18, unidad="pt")
+        self.crear_slider(card_contenido, "Mover texto header", self.header_text_offset_x_var, -150, 150)
+        self.crear_slider(card_contenido, "Mover texto footer", self.footer_text_offset_x_var, -150, 150)
         self.crear_slider(card_contenido, "Ancho del logo", self.logo_width_var, 30, 200)
         self.crear_slider(card_contenido, "Alto del logo", self.logo_height_var, 15, 100)
+
+        fuentes_frame = ctk.CTkFrame(card_contenido, fg_color="transparent")
+        fuentes_frame.pack(fill="x", padx=20, pady=(14, 0))
+        fuentes_frame.grid_columnconfigure((0, 1), weight=1, uniform="fuentes")
+        fuentes = [
+            "Helvetica",
+            "Helvetica-Bold",
+            "Helvetica-Oblique",
+            "Times-Roman",
+            "Times-Bold",
+            "Courier",
+            "Courier-Bold",
+        ]
+
+        ctk.CTkLabel(fuentes_frame, text="Fuente header").grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(fuentes_frame, text="Fuente footer").grid(row=0, column=1, sticky="w", padx=(12, 0))
+        ctk.CTkOptionMenu(
+            fuentes_frame,
+            values=fuentes,
+            variable=self.fuente_header_var,
+            width=1,
+            command=lambda _valor: self.actualizar_preview()
+        ).grid(row=1, column=0, sticky="ew", pady=(4, 0))
+        ctk.CTkOptionMenu(
+            fuentes_frame,
+            values=fuentes,
+            variable=self.fuente_footer_var,
+            width=1,
+            command=lambda _valor: self.actualizar_preview()
+        ).grid(row=1, column=1, sticky="ew", padx=(12, 0), pady=(4, 0))
 
         opciones = ctk.CTkFrame(card_contenido, fg_color="transparent")
         opciones.pack(fill="x", padx=20, pady=(12, 4))
@@ -472,10 +516,17 @@ class PDFNotionApp(TkinterDnD.Tk):
 
         ctk.CTkCheckBox(
             opciones,
+            text="Mostrar separadores",
+            variable=self.mostrar_lineas_separadoras_var,
+            command=self.actualizar_preview
+        ).grid(row=1, column=1, sticky="w", pady=5)
+
+        ctk.CTkCheckBox(
+            opciones,
             text="Agregar portada",
             variable=self.agregar_portada_var,
             command=self.actualizar_preview
-        ).grid(row=1, column=1, sticky="w", pady=5)
+        ).grid(row=2, column=0, sticky="w", pady=5)
 
         ctk.CTkLabel(card_contenido, text="Formato de numeración").pack(anchor="w", padx=20, pady=(12, 2))
 
@@ -491,7 +542,7 @@ class PDFNotionApp(TkinterDnD.Tk):
             variable=self.formato_numeracion_var,
             width=190
         )
-        self.formato_numeracion_menu.pack(anchor="w", padx=20, pady=(0, 14))
+        self.formato_numeracion_menu.pack(fill="x", padx=20, pady=(0, 14))
 
         card_portada = self.crear_card(
             panel,
@@ -529,8 +580,8 @@ class PDFNotionApp(TkinterDnD.Tk):
         )
         self.estado_label.pack(anchor="w", padx=20, pady=(2, 6))
 
-        self.progress = ctk.CTkProgressBar(card_estado, width=460)
-        self.progress.pack(anchor="w", padx=20, pady=(0, 12))
+        self.progress = ctk.CTkProgressBar(card_estado, width=1)
+        self.progress.pack(fill="x", padx=20, pady=(0, 12))
         self.progress.set(0)
 
         botones_archivos = self.crear_fila_botones(card_estado)
@@ -634,19 +685,19 @@ class PDFNotionApp(TkinterDnD.Tk):
 
         fila = ctk.CTkFrame(panel, fg_color="transparent")
         fila.pack(fill="x", padx=20)
+        fila.grid_columnconfigure(0, weight=1)
 
-        entry_width = 250 if comando_quitar else 340
         button_width = 74 if comando_quitar else 80
 
-        entry = ctk.CTkEntry(fila, textvariable=variable, width=entry_width)
-        entry.pack(side="left", padx=(0, 10))
+        entry = ctk.CTkEntry(fila, textvariable=variable)
+        entry.grid(row=0, column=0, sticky="ew", padx=(0, 10))
 
         ctk.CTkButton(
             fila,
             text="Buscar",
             width=button_width,
             command=comando
-        ).pack(side="left")
+        ).grid(row=0, column=1, sticky="e")
 
         nombre_archivo = os.path.basename(variable.get()) if variable.get() else "Sin archivo seleccionado"
 
@@ -654,7 +705,9 @@ class PDFNotionApp(TkinterDnD.Tk):
             panel,
             text=nombre_archivo,
             font=("Arial", 11),
-            text_color="#AAB0B6"
+            text_color="#AAB0B6",
+            wraplength=470,
+            justify="left"
         )
         label_archivo.pack(anchor="w", padx=22, pady=(3, 0))
 
@@ -666,24 +719,26 @@ class PDFNotionApp(TkinterDnD.Tk):
                 fg_color="#3B3F46",
                 hover_color="#4B515A",
                 command=lambda: comando_quitar(label_archivo)
-            ).pack(side="left", padx=(8, 0))
+            ).grid(row=0, column=2, sticky="e", padx=(8, 0))
 
         return entry, label_archivo
 
     def crear_entry(self, panel, texto, variable, width=420):
         ctk.CTkLabel(panel, text=texto).pack(anchor="w", padx=20, pady=(12, 2))
-        ctk.CTkEntry(panel, textvariable=variable, width=width).pack(anchor="w", padx=20)
+        entry = ctk.CTkEntry(panel, textvariable=variable, width=width)
+        entry.pack(fill="x", padx=20)
+        return entry
 
-    def crear_slider(self, panel, texto, variable, minimo, maximo):
+    def crear_slider(self, panel, texto, variable, minimo, maximo, unidad="px"):
         frame = ctk.CTkFrame(panel, fg_color="transparent")
         frame.pack(fill="x", padx=20, pady=(14, 0))
 
-        label = ctk.CTkLabel(frame, text=f"{texto}: {variable.get()} px")
+        label = ctk.CTkLabel(frame, text=f"{texto}: {variable.get()} {unidad}")
         label.pack(anchor="w")
 
         def actualizar(valor):
             variable.set(int(float(valor)))
-            label.configure(text=f"{texto}: {variable.get()} px")
+            label.configure(text=f"{texto}: {variable.get()} {unidad}")
             self.actualizar_preview()
 
         ctk.CTkSlider(
@@ -692,8 +747,8 @@ class PDFNotionApp(TkinterDnD.Tk):
             to=maximo,
             variable=variable,
             command=actualizar,
-            width=420
-        ).pack(anchor="w", pady=4)
+            width=1
+        ).pack(fill="x", pady=4)
 
     def obtener_carpeta_dialogo(self, clave, alternativa=""):
         carpeta = self.config_data.get(clave, "") or alternativa
@@ -924,12 +979,18 @@ class PDFNotionApp(TkinterDnD.Tk):
         self.formato_numeracion_var.set(
             self.formato_config_a_visible(config.get("formato_numeracion", "Página {pagina}"))
         )
+        self.fuente_header_var.set(config.get("fuente_header", "Helvetica-Bold"))
+        self.fuente_footer_var.set(config.get("fuente_footer", "Helvetica"))
 
         self.header_offset_var.set(int(config.get("header_offset", 35)))
         self.footer_offset_var.set(int(config.get("footer_offset", 25)))
         self.margen_x_var.set(int(config.get("margen_x", 40)))
         self.logo_width_var.set(int(config.get("logo_width", 80)))
         self.logo_height_var.set(int(config.get("logo_height", 30)))
+        self.tamano_fuente_header_var.set(int(config.get("tamano_fuente_header", 10)))
+        self.tamano_fuente_footer_var.set(int(config.get("tamano_fuente_footer", 8)))
+        self.header_text_offset_x_var.set(int(config.get("header_text_offset_x", 0)))
+        self.footer_text_offset_x_var.set(int(config.get("footer_text_offset_x", 0)))
 
         self.titulo_portada_var.set(config.get("titulo_portada", ""))
         self.subtitulo_portada_var.set(config.get("subtitulo_portada", ""))
@@ -938,6 +999,7 @@ class PDFNotionApp(TkinterDnD.Tk):
         self.mostrar_logo_var.set(bool(config.get("mostrar_logo", True)))
         self.mostrar_fecha_var.set(bool(config.get("mostrar_fecha", True)))
         self.numerar_paginas_var.set(bool(config.get("numerar_paginas", True)))
+        self.mostrar_lineas_separadoras_var.set(bool(config.get("mostrar_lineas_separadoras", True)))
         self.agregar_portada_var.set(bool(config.get("agregar_portada", True)))
         self.agregar_indice_var.set(bool(config.get("agregar_indice", False)))
         self.mostrar_header_portada_var.set(bool(config.get("mostrar_header_portada", False)))
@@ -1264,6 +1326,13 @@ class PDFNotionApp(TkinterDnD.Tk):
             "mostrar_logo": self.mostrar_logo_var.get(),
             "mostrar_fecha": self.mostrar_fecha_var.get(),
             "numerar_paginas": self.numerar_paginas_var.get(),
+            "mostrar_lineas_separadoras": self.mostrar_lineas_separadoras_var.get(),
+            "fuente_header": self.fuente_header_var.get(),
+            "fuente_footer": self.fuente_footer_var.get(),
+            "tamano_fuente_header": self.tamano_fuente_header_var.get(),
+            "tamano_fuente_footer": self.tamano_fuente_footer_var.get(),
+            "header_text_offset_x": self.header_text_offset_x_var.get(),
+            "footer_text_offset_x": self.footer_text_offset_x_var.get(),
             #"formato_numeracion": self.formato_numeracion_var.get(),
 
             "formato_numeracion": mapa_numeracion.get(
@@ -2236,22 +2305,25 @@ class PDFNotionApp(TkinterDnD.Tk):
 
         fila = ctk.CTkFrame(panel, fg_color="transparent")
         fila.pack(fill="x", padx=20)
+        fila.grid_columnconfigure(0, weight=1)
 
-        entry = ctk.CTkEntry(fila, textvariable=variable, width=260)
-        entry.pack(side="left", padx=(0, 10))
+        entry = ctk.CTkEntry(fila, textvariable=variable)
+        entry.grid(row=0, column=0, sticky="ew", padx=(0, 10))
 
         ctk.CTkButton(
             fila,
             text="Buscar",
             width=74,
             command=comando
-        ).pack(side="left")
+        ).grid(row=0, column=1, sticky="e")
 
         label = ctk.CTkLabel(
             panel,
             text=os.path.basename(variable.get()) if variable.get() else "Sin archivo seleccionado",
             font=("Arial", 11),
-            text_color="#AAB0B6"
+            text_color="#AAB0B6",
+            wraplength=470,
+            justify="left"
         )
         label.pack(anchor="w", padx=22, pady=(3, 0))
 
@@ -2262,7 +2334,7 @@ class PDFNotionApp(TkinterDnD.Tk):
             fg_color="#3B3F46",
             hover_color="#4B515A",
             command=lambda: self.quitar_logo(variable, label)
-        ).pack(side="left", padx=(8, 0))
+        ).grid(row=0, column=2, sticky="e", padx=(8, 0))
 
         return entry, label
 

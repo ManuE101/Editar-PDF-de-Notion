@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass, field
 from typing import List
 
@@ -44,13 +45,51 @@ def agrupar_en_secciones(documento):
     if seccion_actual:
         secciones.append(seccion_actual)
 
-    return secciones
+    return unir_titulos_sueltos(secciones)
+
+
+def seccion_solo_titulos(seccion):
+    return bool(seccion.bloques) and all(
+        bloque.tipo == "heading"
+        for bloque in seccion.bloques
+    )
+
+
+def unir_titulos_sueltos(secciones):
+    secciones_finales = []
+    titulos_pendientes = []
+
+    for seccion in secciones:
+        if seccion_solo_titulos(seccion):
+            titulos_pendientes.extend(seccion.bloques)
+            continue
+
+        if titulos_pendientes:
+            seccion = Seccion(
+                titulo=titulos_pendientes[0].texto,
+                nivel=titulos_pendientes[0].nivel,
+                bloques=titulos_pendientes + seccion.bloques
+            )
+            titulos_pendientes = []
+
+        secciones_finales.append(seccion)
+
+    if titulos_pendientes:
+        secciones_finales.append(
+            Seccion(
+                titulo=titulos_pendientes[0].texto,
+                nivel=titulos_pendientes[0].nivel,
+                bloques=titulos_pendientes
+            )
+        )
+
+    return secciones_finales
 
 
 def estimar_altura_bloque(bloque):
     """
-    Estimación simple de altura.
-    No dibuja el PDF; solo calcula si conviene dejar algo junto o moverlo.
+    Estimacion aproximada, alineada con smart_pdf_exporter_v2.draw_bloque.
+    Se usa solo para decidir cortes antes de dibujar.
     """
 
     if bloque.tipo == "heading":
@@ -62,15 +101,17 @@ def estimar_altura_bloque(bloque):
 
     if bloque.tipo == "paragraph":
         caracteres = len(bloque.texto)
-        lineas = max(1, caracteres // 85 + 1)
-        return lineas * 16 + 6
+        lineas = max(1, caracteres // 95 + 1)
+        return lineas * 15 + 7
 
     if bloque.tipo == "bullet":
         caracteres = len(bloque.texto)
-        lineas = max(1, caracteres // 80 + 1)
-        return lineas * 15 + 4
+        lineas = max(1, caracteres // 90 + 1)
+        return lineas * 15 + 5
 
     if bloque.tipo == "image":
+        if not bloque.imagen or not os.path.exists(bloque.imagen):
+            return 0
         return 260
 
     return 20
@@ -80,13 +121,15 @@ def estimar_altura_seccion(seccion):
     return sum(estimar_altura_bloque(bloque) for bloque in seccion.bloques)
 
 
-def dividir_en_paginas(documento, alto_util=680):
+def dividir_en_paginas(documento, alto_util=720):
     """
-    Convierte el documento en páginas aproximadas.
-    Regla principal:
-    - Una sección chica se mantiene junta.
-    - Una sección grande puede partirse.
-    - Nunca deja un heading solo al final de página.
+    Convierte el documento en paginas aproximadas.
+
+    La regla anterior mantenia cualquier seccion chica junta. Eso evitaba
+    cortes internos, pero tambien podia dejar media pagina vacia. Ahora solo
+    manda la seccion completa a la pagina siguiente cuando el espacio restante
+    es realmente chico; si queda aire util, parte la seccion cuidando no dejar
+    un titulo solo al final.
     """
 
     secciones = agrupar_en_secciones(documento)
@@ -94,61 +137,98 @@ def dividir_en_paginas(documento, alto_util=680):
     paginas = []
     pagina_actual = PaginaLayout(numero=1)
     espacio_usado = 0
+    espacio_minimo_para_partir = 120
+
+    def cerrar_pagina():
+        nonlocal pagina_actual, espacio_usado
+
+        if pagina_actual.secciones:
+            paginas.append(pagina_actual)
+
+        pagina_actual = PaginaLayout(numero=len(paginas) + 1)
+        espacio_usado = 0
+
+    def agregar_seccion_parcial(seccion, bloques):
+        if not bloques:
+            return
+
+        pagina_actual.secciones.append(
+            Seccion(
+                titulo=seccion.titulo,
+                nivel=seccion.nivel,
+                bloques=bloques
+            )
+        )
+
+    def partir_seccion(seccion):
+        nonlocal espacio_usado
+
+        bloques_actuales = []
+        bloques = seccion.bloques
+
+        for indice, bloque in enumerate(bloques):
+            altura_bloque = estimar_altura_bloque(bloque)
+            indice_siguiente_contenido = indice + 1
+            while (
+                indice_siguiente_contenido < len(bloques)
+                and bloques[indice_siguiente_contenido].tipo == "heading"
+            ):
+                indice_siguiente_contenido += 1
+
+            altura_siguiente = (
+                estimar_altura_bloque(bloques[indice_siguiente_contenido])
+                if bloque.tipo == "heading" and indice_siguiente_contenido < len(bloques)
+                else 0
+            )
+            altura_titulos_encadenados = sum(
+                estimar_altura_bloque(bloques[i])
+                for i in range(indice + 1, indice_siguiente_contenido)
+            )
+            altura_minima_junta = (
+                altura_bloque
+                + altura_titulos_encadenados
+                + min(altura_siguiente, 70)
+            )
+
+            if (
+                bloque.tipo == "heading"
+                and espacio_usado > 0
+                and espacio_usado + altura_minima_junta > alto_util
+            ):
+                agregar_seccion_parcial(seccion, bloques_actuales)
+                bloques_actuales = []
+                cerrar_pagina()
+            elif espacio_usado > 0 and espacio_usado + altura_bloque > alto_util:
+                agregar_seccion_parcial(seccion, bloques_actuales)
+                bloques_actuales = []
+                cerrar_pagina()
+
+            bloques_actuales.append(bloque)
+            espacio_usado += altura_bloque
+
+            if espacio_usado >= alto_util:
+                agregar_seccion_parcial(seccion, bloques_actuales)
+                bloques_actuales = []
+                cerrar_pagina()
+
+        agregar_seccion_parcial(seccion, bloques_actuales)
 
     for seccion in secciones:
         altura_seccion = estimar_altura_seccion(seccion)
 
-        # Caso 1: la sección completa entra
         if espacio_usado + altura_seccion <= alto_util:
             pagina_actual.secciones.append(seccion)
             espacio_usado += altura_seccion
             continue
 
-        # Caso 2: la sección no entra, pero es chica: mandarla entera a nueva página
-        if altura_seccion <= alto_util:
-            if pagina_actual.secciones:
-                paginas.append(pagina_actual)
-
-            pagina_actual = PaginaLayout(numero=len(paginas) + 1)
+        espacio_restante = alto_util - espacio_usado
+        if altura_seccion <= alto_util and espacio_restante < espacio_minimo_para_partir:
+            cerrar_pagina()
             pagina_actual.secciones.append(seccion)
             espacio_usado = altura_seccion
             continue
 
-        # Caso 3: sección grande. Hay que partirla cuidadosamente.
-        bloques_actuales = []
-
-        for bloque in seccion.bloques:
-            altura_bloque = estimar_altura_bloque(bloque)
-
-            # Si el bloque no entra, cerramos la sección parcial y pasamos página
-            if espacio_usado + altura_bloque > alto_util:
-                if bloques_actuales:
-                    pagina_actual.secciones.append(
-                        Seccion(
-                            titulo=seccion.titulo,
-                            nivel=seccion.nivel,
-                            bloques=bloques_actuales
-                        )
-                    )
-                    bloques_actuales = []
-
-                if pagina_actual.secciones:
-                    paginas.append(pagina_actual)
-
-                pagina_actual = PaginaLayout(numero=len(paginas) + 1)
-                espacio_usado = 0
-
-            bloques_actuales.append(bloque)
-            espacio_usado += altura_bloque
-
-        if bloques_actuales:
-            pagina_actual.secciones.append(
-                Seccion(
-                    titulo=seccion.titulo,
-                    nivel=seccion.nivel,
-                    bloques=bloques_actuales
-                )
-            )
+        partir_seccion(seccion)
 
     if pagina_actual.secciones:
         paginas.append(pagina_actual)

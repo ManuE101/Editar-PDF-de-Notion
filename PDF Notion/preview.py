@@ -28,6 +28,26 @@ def cargar_fuente(tamano, bold=False):
     return ImageFont.load_default()
 
 
+def cargar_fuente_pdf(nombre_fuente, tamano):
+    fuentes = {
+        "Helvetica": ["arial.ttf"],
+        "Helvetica-Bold": ["arialbd.ttf", "arial.ttf"],
+        "Helvetica-Oblique": ["ariali.ttf", "arial.ttf"],
+        "Times-Roman": ["times.ttf", "arial.ttf"],
+        "Times-Bold": ["timesbd.ttf", "arialbd.ttf", "arial.ttf"],
+        "Courier": ["cour.ttf", "arial.ttf"],
+        "Courier-Bold": ["courbd.ttf", "arialbd.ttf", "arial.ttf"],
+    }
+
+    for nombre in fuentes.get(nombre_fuente, ["arial.ttf"]):
+        try:
+            return ImageFont.truetype(nombre, tamano)
+        except Exception:
+            pass
+
+    return ImageFont.load_default()
+
+
 def ancho_texto(draw, texto, font):
     bbox = draw.textbbox((0, 0), texto, font=font)
     return bbox[2] - bbox[0]
@@ -115,9 +135,18 @@ def aplicar_overlay_preview(imagen_base, escala, ruta_pdf, config):
     logo_width = int(config.get("logo_width", 80) * escala)
     logo_height = int(config.get("logo_height", 30) * escala)
     logo_top = max(0, int((config.get("header_offset", 35) - 15) * escala))
+    header_text_offset_x = int(config.get("header_text_offset_x", 0) * escala)
+    footer_text_offset_x = int(config.get("footer_text_offset_x", 0) * escala)
 
-    font_header = cargar_fuente(10, bold=True)
-    font_small = cargar_fuente(8)
+    font_header = cargar_fuente_pdf(
+        config.get("fuente_header", "Helvetica-Bold"),
+        int(config.get("tamano_fuente_header", 10))
+    )
+    font_footer = cargar_fuente_pdf(
+        config.get("fuente_footer", "Helvetica"),
+        int(config.get("tamano_fuente_footer", 8))
+    )
+    font_small = cargar_fuente(max(6, min(14, int(config.get("tamano_fuente_footer", 8)))))
 
     logo_izquierdo = config.get("logo_izquierdo", "")
     logo_central = config.get("logo_central", "")
@@ -142,9 +171,9 @@ def aplicar_overlay_preview(imagen_base, escala, ruta_pdf, config):
             logo_height
         )
 
-    texto_x = margen_x
+    texto_x = margen_x + header_text_offset_x
     if config.get("mostrar_logo") and logo_izquierdo and os.path.exists(logo_izquierdo):
-        texto_x = margen_x + logo_width + int(15 * escala)
+        texto_x = margen_x + logo_width + int(15 * escala) + header_text_offset_x
 
     titulo_fallback = os.path.splitext(os.path.basename(ruta_pdf))[0]
     header_texto = config.get("header", "") or titulo_fallback
@@ -166,11 +195,12 @@ def aplicar_overlay_preview(imagen_base, escala, ruta_pdf, config):
     linea_color = (90, 90, 90)
     guia_color = (220, 40, 40)
 
-    draw.line(
-        [(margen_x, header_y + int(25 * escala)), (ancho_preview - margen_x, header_y + int(25 * escala))],
-        fill=linea_color,
-        width=1
-    )
+    if config.get("mostrar_lineas_separadoras", True):
+        draw.line(
+            [(margen_x, header_y + int(25 * escala)), (ancho_preview - margen_x, header_y + int(25 * escala))],
+            fill=linea_color,
+            width=1
+        )
     draw.line(
         [(margen_x, header_y), (ancho_preview - margen_x, header_y)],
         fill=guia_color,
@@ -179,7 +209,7 @@ def aplicar_overlay_preview(imagen_base, escala, ruta_pdf, config):
 
     footer_texto = f'{config.get("footer", "")} | {config.get("version", "")}'.strip(" |")
     if footer_texto:
-        draw.text((margen_x, footer_y), footer_texto, fill=(45, 45, 45), font=font_small)
+        draw.text((margen_x + footer_text_offset_x, footer_y), footer_texto, fill=(45, 45, 45), font=font_footer)
 
     texto_pagina = formatear_numeracion(config)
     if texto_pagina:
@@ -192,11 +222,12 @@ def aplicar_overlay_preview(imagen_base, escala, ruta_pdf, config):
         )
 
     footer_line_y = max(0, footer_y - int(20 * escala))
-    draw.line(
-        [(margen_x, footer_line_y), (ancho_preview - margen_x, footer_line_y)],
-        fill=linea_color,
-        width=1
-    )
+    if config.get("mostrar_lineas_separadoras", True):
+        draw.line(
+            [(margen_x, footer_line_y), (ancho_preview - margen_x, footer_line_y)],
+            fill=linea_color,
+            width=1
+        )
     draw.line(
         [(margen_x, footer_y), (ancho_preview - margen_x, footer_y)],
         fill=guia_color,
